@@ -86,3 +86,5 @@ This is a learning repo that I have created for documentaion purpose
 - Bloom filter, 
 - https://medium.com/analytics-vidhya/everything-you-need-to-know-about-linear-regression-750a69a0ea50
 - https://medium.com/@vaibhavkhamitkar12/assumptions-of-linear-regression-a-journey-into-the-world-of-predictive-4a397ed2abf2
+
+- Learn Unix, How everything is a file?
