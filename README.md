@@ -23,7 +23,7 @@ This is a learning repo that I have created for documentaion purpose
 - git ke merging issues and fixes
 - load testing: JMeter, etc
  recall, precision
-- load balancer, different layer balancers, linkerd
+- load balancer, different layer balancers, Linkerd
 - langchain
 - databricks
 - FAISS
