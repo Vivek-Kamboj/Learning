@@ -88,3 +88,7 @@ This is a learning repo that I have created for documentaion purpose
 - https://medium.com/@vaibhavkhamitkar12/assumptions-of-linear-regression-a-journey-into-the-world-of-predictive-4a397ed2abf2
 
 - Learn Unix, How everything is a file?
+
+- Kafka console consumer commands, how to see broker, topics, set different offsets, etc,   revice all of them
+
+- How to set up remote debugging like java - jar ...
