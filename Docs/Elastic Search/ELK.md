@@ -61,11 +61,6 @@ flowchart LR
 
 Elasticsearch **ingest pipelines** (Painless processors, grok in ingest node) overlap with some Logstash use cases; choose based on team skills and operational complexity.
 
----
-
-## Managed and commercial options
-
-**Elastic Cloud** hosts Elasticsearch and Kibana (and related services) so you avoid running the cluster yourself. Elastic also offers **commercial features** (security, machine learning, advanced alerting) under subscriptions; the boundary between free and paid changes over time, so check current Elastic documentation for your version.
 
 ---
 

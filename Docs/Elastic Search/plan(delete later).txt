@@ -1,0 +1,233 @@
+Kafka → Elasticsearch → Kibana (URL tokens + time series + filters)
+======================================================================
+
+Checklist
+---------
+[ ] Confirm ES + Kibana + Kafka access; decide Logstash vs Kafka Connect
+[ ] Define index/template: date time field, keyword dims, url_tokens keyword array
+[ ] Implement URL split (host + path) into url_tokens in Logstash filter or ES ingest pipeline
+[ ] Configure Kafka consumer → Elasticsearch index (with pipeline if used)
+[ ] Create Kibana data view, verify Discover filters, build Lens time series
+
+
+Prerequisites
+-------------
+- Running Elasticsearch and Kibana (Elastic Cloud or self-hosted, versions aligned, e.g. 8.x).
+- Kafka topic producing JSON with at least: url, country, city, category, and a time field.
+  Without a real date field, time series in Kibana will be misleading; map one field as @timestamp
+  or event_time of type date.
+
+
+Target data shape in Elasticsearch
+------------------------------------
+Design each document so Kibana can:
+
+- Time series: one date field (e.g. @timestamp or event_time) as the time field in the data view.
+- Filters (country, city, category): keyword (or keyword multi-field) for exact filters and aggs.
+- URL "words": keyword array field url_tokens, e.g. ["aarp","org","health","dementia"] from host + path.
+
+Example document after processing:
+- url (optional keyword for raw URL)
+- url_tokens: ["aarp","org","health","dementia"]
+- country, city, category: keyword
+- @timestamp: date
+
+Create the index template or index mapping before bulk load so types are correct.
+
+
+Step 1: Choose the ingest path
+------------------------------
+A. Logstash — Kafka input → filter (split URL into tokens) → Elasticsearch output.
+   Good when you want grok/split/ruby in one place.
+
+B. Kafka Connect + Elasticsearch Sink + ingest pipeline — Connect pushes JSON as-is;
+   Elasticsearch ingest pipeline uses uri_parts on url, then split or a Painless script
+   to build url_tokens from hostname (split on .) and path (split on /, drop empties).
+
+Pick A if you already use Logstash; B if you standardize on Connect for Kafka.
+
+Elastic docs:
+- https://www.elastic.co/guide/en/elasticsearch/reference/current/uri-parts-processor.html
+- https://www.elastic.co/guide/en/elasticsearch/reference/current/split-processor.html
+- https://www.elastic.co/guide/en/elasticsearch/reference/current/script-processor.html
+
+
+Step 2: Implement URL tokenization
+------------------------------------
+From aarp.org/health/dementia (normalize to a full URL if needed, e.g. prepend https:// for uri_parts):
+
+- Hostname → split on . → aarp, org (optionally drop www via a small denylist).
+- Path → split on / → health, dementia.
+
+Combine into url_tokens (unique, no empty strings). Use Logstash (mutate split + ruby filter)
+or ingest pipeline (split + append / script).
+
+
+Code: tokenize URL in Elasticsearch (ingest pipeline)
+------------------------------------------------------
+Run in Kibana Dev Tools (or REST). Adjust the source field name if yours is not `url`.
+
+Pipeline logic:
+1) If `url` has no `://`, prepend `https://` so `uri_parts` can parse values like `aarp.org/health/dementia`.
+2) `uri_parts` splits into `url_parts` (domain, path, etc.).
+3) Painless splits domain on `.` and path on `/`, merges into `url_tokens`, removes temp fields.
+
+PUT _ingest/pipeline/url_tokens_pipeline
+{
+  "processors": [
+    {
+      "script": {
+        "lang": "painless",
+        "if": "ctx.url != null",
+        "source": "def u = ctx.url.toString().trim(); if (u.length() == 0) { return; } if (!u.contains(\"://\")) { ctx._url_parse = \"https://\" + u; } else { ctx._url_parse = u; }"
+      }
+    },
+    {
+      "uri_parts": {
+        "field": "_url_parse",
+        "target_field": "url_parts",
+        "ignore_failure": true
+      }
+    },
+    {
+      "remove": {
+        "field": "_url_parse",
+        "ignore_missing": true
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "if": "ctx.url_parts != null",
+        "source": "def tokens = new java.util.HashSet(); def up = ctx.url_parts; if (up.domain != null) { for (def part : /\\./.split(up.domain)) { if (part.length() > 0) { tokens.add(part); } } } if (up.path != null) { for (def part : /\\//.split(up.path)) { if (part.length() > 0) { tokens.add(part); } } } ctx.url_tokens = new ArrayList(tokens); ctx.remove(\"url_parts\");",
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "if": "ctx.url_tokens == null",
+        "source": "ctx.url_tokens = new ArrayList();"
+      }
+    }
+  ]
+}
+
+Use the pipeline when indexing (example):
+
+PUT my-index/_doc/1?pipeline=url_tokens_pipeline
+{
+  "url": "aarp.org/health/dementia",
+  "country": "US",
+  "city": "NYC",
+  "category": "health",
+  "@timestamp": "2025-01-15T12:00:00Z"
+}
+
+Or set as default for the index:
+
+PUT my-index/_settings
+{
+  "index.default_pipeline": "url_tokens_pipeline"
+}
+
+Mapping hint for url_tokens (keyword array):
+
+PUT my-index
+{
+  "mappings": {
+    "properties": {
+      "url": { "type": "keyword", "ignore_above": 2048 },
+      "url_tokens": { "type": "keyword" },
+      "country": { "type": "keyword" },
+      "city": { "type": "keyword" },
+      "category": { "type": "keyword" },
+      "@timestamp": { "type": "date" }
+    }
+  }
+}
+
+
+Code: tokenize URL in Logstash (ruby filter)
+--------------------------------------------
+Use if Kafka → Logstash → Elasticsearch; set the same field names as in your mapping.
+
+filter {
+  if [url] {
+    ruby {
+      code => '
+        url = event.get("url")
+        return if url.nil? || url.to_s.empty?
+        u = url.to_s.strip
+        u = "https://#{u}" unless u.include?("://")
+        require "uri"
+        begin
+          uri = URI.parse(u)
+          tokens = []
+          (uri.host || "").split(".").each { |t| tokens << t unless t.empty? }
+          (uri.path || "").split("/").each { |t| tokens << t unless t.empty? }
+          event.set("url_tokens", tokens.uniq)
+        rescue StandardError
+          event.set("url_tokens", [])
+        end
+      '
+    }
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["https://localhost:9200"]
+    index => "my-index"
+    # pipeline => "url_tokens_pipeline"  # optional if you also parse in ES
+  }
+}
+
+Notes:
+- If you use BOTH Logstash ruby and the ingest pipeline, you will overwrite or duplicate work; pick one place to tokenize unless you use different field names.
+- Test the painless pipeline on your cluster version; if uri_parts or regex split behaves differently, fall back to Logstash ruby or a single larger Painless script with string indexOf/substring (no URI).
+
+
+Step 3: Wire Kafka to Elasticsearch
+-----------------------------------
+Logstash:
+- kafka input: bootstrap servers, topic, consumer group, codec => "json"
+  https://www.elastic.co/guide/en/logstash/current/plugins-inputs-kafka.html
+- elasticsearch output: index name or data stream; optional pipeline => "your_pipeline_id"
+  https://www.elastic.co/guide/en/logstash/current/plugins-outputs-elasticsearch.html
+
+Kafka Connect:
+- Elasticsearch sink: connection.url, index name, transforms / ingest pipeline per connector version.
+- Or pre-process with Kafka Streams / ksqlDB if the sink cannot attach a pipeline.
+
+Choose an index naming strategy (daily logs-YYYY.MM.DD vs single index) for retention.
+
+
+Step 4: Verify documents in Elasticsearch
+-----------------------------------------
+- Search the index (Kibana Dev Tools or GET index/_search).
+
+Confirm: url_tokens is an array; country / city / category are filterable keywords;
+the time field parses as date.
+
+
+Step 5: Kibana setup
+--------------------
+1. Stack Management → Data views: create a data view matching your index/pattern; set the time field
+   to your date field (@timestamp or event_time).
+2. Discover: confirm documents; test filters on country, city, category, url_tokens.
+3. Lens: X-axis = date histogram on time field; Y-axis = Count (or Unique count). Optional breakdown
+   by category or url_tokens (high cardinality on url_tokens can make charts noisy; filter to one token
+   or top values).
+
+
+Step 6: Operational checks
+--------------------------
+- Consumer lag (Kafka) and Logstash/Connect error logs.
+- Mapping conflicts if a field sometimes arrives as string vs object.
+- Index lifecycle (ILM) if daily indices grow quickly.
+
+
+See also
+--------
+Docs/Elastic Search/ELK.md

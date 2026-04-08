@@ -92,3 +92,4 @@ This is a learning repo that I have created for documentaion purpose
 - Kafka console consumer commands, how to see broker, topics, set different offsets, etc,   revice all of them
 
 - How to set up remote debugging like java - jar ...
+- minio gsc alternative
