@@ -103,4 +103,6 @@ This is a learning repo that I have created for documentaion purpose
 
 - kafka broker insider
 - Zookeeper
-Crontoller Nodes
+- Crontoller Nodes
+- Make a simple Elastic Search APP (Using ELK stack)
+
