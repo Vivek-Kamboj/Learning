@@ -93,3 +93,14 @@ This is a learning repo that I have created for documentaion purpose
 
 - How to set up remote debugging like java - jar ...
 - minio gsc alternative
+- BLEU and ROUGE metrics for LLM
+
+
+----- To put in docs ------
+- Ensemble: A group of servers working together as a single coordinated system (e.g., in Apache ZooKeeper).
+- Quorum: The minimum majority of nodes required to agree for a decision to be valid in a distributed system.
+----------------------------
+
+- kafka broker insider
+- Zookeeper
+Crontoller Nodes
