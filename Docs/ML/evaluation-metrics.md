@@ -62,8 +62,8 @@ $$
 \text{BLEU} = BP \cdot \exp\left(\sum_{n=1}^{N} w_n \log p_n\right)
 $$
 
-- \(p_n\): modified n-gram precision (usually \(n = 1..4\), equal weights).
-- \(BP\): brevity penalty if candidate length \(<\) reference length.
+- $p_n$: modified n-gram precision (usually $n = 1..4$, equal weights).
+- $BP$: brevity penalty if candidate length is less than reference length.
 
 **Example:**
 
@@ -102,10 +102,12 @@ Reference unigrams `{the, dog, barked, loudly}` — hypothesis contains 3 of 4 �
 **Formula:**
 
 $$
-\text{Perplexity} = \exp\left(-\frac{1}{N}\sum_{i=1}^{N} \log P(w_i \mid w_{<i})\right) = 2^{H}
+\text{Perplexity} = \exp\left( -\frac{1}{N} \sum_{i=1}^{N} \log P(w_i \mid w_{1:i-1}) \right) = 2^{H}
 $$
 
-where \(N\) is number of predicted tokens and \(H\) is average cross-entropy in bits (if log base 2).
+($w_{1:i-1}$ = tokens before position $i$; same idea as “context so far”.)
+
+where $N$ is number of predicted tokens and $H$ is average cross-entropy in bits (if log base 2).
 
 **Example:** Model assigns probability 0.25 to each of 4 equally likely next words on average → $-\log_2(0.25) = 2$ bits/token → **perplexity = $2^2 = 4$**. If the model is sharper (higher probs on true tokens), perplexity **drops** (e.g. toward 1 for a perfect deterministic predictor on that text).
 
